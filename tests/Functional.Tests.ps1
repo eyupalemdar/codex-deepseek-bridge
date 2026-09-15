@@ -44,7 +44,39 @@ try {
     $validation=& (Join-Path $broker 'codex-image.ps1') -RequestPath $requestPath -ValidateOnly|ConvertFrom-Json
     if($validation.status-ne'validated'-or$validation.project_id-ne'sample-project'){throw 'Broker validation failed.'}
 
-    [ordered]@{status='passed';install=$true;catalog=$true;catalog_ttl_keeper=$true;keeper_metadata_preserved=$true;reviewer_model_override=$true;approvals_reviewer_optin=$true;permissions_preserved=$true;context_pinned=$true;project_registration=$true;broker_validation=$true}|ConvertTo-Json
+    $stubDir=Join-Path $testRoot 'stub-bin'
+    New-Item -ItemType Directory -Path $stubDir -Force|Out-Null
+    $captured=Join-Path $stubDir 'captured.txt'
+    Set-Content -LiteralPath (Join-Path $stubDir 'codex.cmd') -Encoding ASCII -Value @('@echo off','echo %* > "%~dp0captured.txt"','exit /b 0')
+    $keyName='DEEPSEEK_'+'API_KEY'
+    $savedKey=[Environment]::GetEnvironmentVariable($keyName)
+    $savedPath=$env:PATH
+    [Environment]::SetEnvironmentVariable($keyName,'test-key-not-real')
+    $env:PATH="$stubDir;$savedPath"
+    try{
+        $launcherPath=Join-Path $bin 'test-codex-provider.cmd'
+        foreach($case in @('none','minimal','low','medium','high','xhigh','max')){
+            Remove-Item -LiteralPath $captured -Force -ErrorAction SilentlyContinue
+            & $launcherPath "--$case" exec hello|Out-Null
+            Start-Sleep -Milliseconds 250
+            $text=Get-Content -Raw $captured -ErrorAction SilentlyContinue
+            if($text -notmatch [regex]::Escape("-c model_reasoning_effort=`"$case`"")){throw "Launcher did not map --$case to the expected reasoning level."}
+            if($text -notmatch [regex]::Escape("-c plan_mode_reasoning_effort=`"$case`"")){throw "Launcher did not map --$case to the expected plan level."}
+            if($text -match [regex]::Escape("--$case")){throw "Launcher passed --$case through to codex."}
+            if($text -notmatch 'exec hello'){throw "Launcher dropped pass-through arguments for --$case."}
+        }
+        Remove-Item -LiteralPath $captured -Force -ErrorAction SilentlyContinue
+        & $launcherPath exec hello|Out-Null
+        Start-Sleep -Milliseconds 250
+        $text=Get-Content -Raw $captured -ErrorAction SilentlyContinue
+        if($text -notmatch [regex]::Escape('-c model_reasoning_effort="max"')){throw 'Launcher default reasoning level is missing.'}
+    }
+    finally{
+        $env:PATH=$savedPath
+        [Environment]::SetEnvironmentVariable($keyName,$savedKey)
+    }
+
+    [ordered]@{status='passed';install=$true;catalog=$true;catalog_ttl_keeper=$true;keeper_metadata_preserved=$true;reviewer_model_override=$true;approvals_reviewer_optin=$true;reasoning_level_switches=$true;permissions_preserved=$true;context_pinned=$true;project_registration=$true;broker_validation=$true}|ConvertTo-Json
 }
 finally {
     if(Test-Path -LiteralPath $testRoot){Remove-Item -LiteralPath $testRoot -Recurse -Force}

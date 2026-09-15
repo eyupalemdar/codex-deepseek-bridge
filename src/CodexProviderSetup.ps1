@@ -107,9 +107,39 @@ while((Get-Date)-lt$deadline){
 '@
     Write-Utf8 $keeper $keeperBody
     $compactLimit=[Math]::Floor($ContextWindow * 0.9)
-    $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="{3}" -c plan_mode_reasoning_effort="{4}"' -f $DefaultModel,$ContextWindow,$compactLimit,$ReasoningEffort,$PlanReasoningEffort)
+    $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="%EFFORT%" -c plan_mode_reasoning_effort="%PLANEFFORT%"' -f $DefaultModel,$ContextWindow,$compactLimit)
     $providerArgs=('-c model_provider="{0}" -c model_providers.{0}.name="{0}" -c model_providers.{0}.base_url="{1}" -c model_providers.{0}.env_key="{2}" -c model_providers.{0}.wire_api="responses"' -f $ProviderName,$BaseUrl,$ApiKeyEnvironmentVariable)
-    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`nif not exist `"$ProviderCodexHome\models_cache.json`" (`r`n  echo Provider model catalog is missing; run setup.ps1 -Action Install first. 1>&2`r`n  exit /b 3`r`n)`r`nstart `"$CommandName-cache-keeper`" /b powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$keeper`" -CachePath `"$ProviderCodexHome\models_cache.json`" >nul 2>nul`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
+    $bodyLines=@(
+        '@echo off'
+        'setlocal'
+        "set `"CODEX_HOME=$ProviderCodexHome`""
+        'rem Optional first argument selects the reasoning level for this session:'
+        'rem   --none --minimal --low --medium --high --xhigh --max'
+        "set `"EFFORT=$ReasoningEffort`""
+        "set `"PLANEFFORT=$PlanReasoningEffort`""
+        'set "LEVELFLAG="'
+        'set "PASSTHRU=%*"'
+        'if /i "%~1"=="--none"    (set "EFFORT=none"    & set "PLANEFFORT=none"    & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--minimal" (set "EFFORT=minimal" & set "PLANEFFORT=minimal" & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--low"     (set "EFFORT=low"     & set "PLANEFFORT=low"     & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--medium"  (set "EFFORT=medium"  & set "PLANEFFORT=medium"  & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--high"    (set "EFFORT=high"    & set "PLANEFFORT=high"    & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--xhigh"   (set "EFFORT=xhigh"   & set "PLANEFFORT=xhigh"   & set "LEVELFLAG=1")'
+        'if /i "%~1"=="--max"     (set "EFFORT=max"     & set "PLANEFFORT=max"     & set "LEVELFLAG=1")'
+        'if defined LEVELFLAG call set "PASSTHRU=%%PASSTHRU:--%EFFORT%=%%"'
+        "if not defined $ApiKeyEnvironmentVariable ("
+        "  echo $ApiKeyEnvironmentVariable is not configured. 1>&2"
+        '  exit /b 2'
+        ')'
+        "if not exist `"$ProviderCodexHome\models_cache.json`" ("
+        '  echo Provider model catalog is missing; run setup.ps1 -Action Install first. 1>&2'
+        '  exit /b 3'
+        ')'
+        "start `"$CommandName-cache-keeper`" /b powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$keeper`" -CachePath `"$ProviderCodexHome\models_cache.json`" >nul 2>nul"
+        "call codex $modelArgs $providerArgs %PASSTHRU%"
+        'exit /b %ERRORLEVEL%'
+    )
+    $body=($bodyLines -join "`r`n")+"`r`n"
     Write-Utf8 $launcher $body
     if(-not$SkipPathUpdate){$userPath=[Environment]::GetEnvironmentVariable('Path','User');$entries=@($userPath-split';'|Where-Object{$_});if(-not($entries|Where-Object{$_.TrimEnd('\')-ieq$InstallBin.TrimEnd('\')})){[Environment]::SetEnvironmentVariable('Path',(@($entries)+$InstallBin)-join';','User')}}
     $launcher

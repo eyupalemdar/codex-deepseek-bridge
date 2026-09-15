@@ -18,6 +18,7 @@ generated assets.
 - Explicit context and compaction limits for custom-provider models
 - A local model catalog so `/model` recognizes configured provider models
 - A session-lifetime cache keeper that renews the five-minute catalog TTL
+- Launch-time reasoning-level selection (`--low` … `--xhigh`, see below)
 - Independent Default and Plan reasoning levels
 - Optional protected image broker and per-project delivery policy
 - Validation, live smoke-test, and scoped uninstall actions
@@ -49,6 +50,22 @@ Validate without printing secret values:
 ```
 
 The live test makes a small billed request to the configured provider.
+
+## Reasoning levels at launch
+
+The launcher accepts an optional first argument that sets both the Default and
+the Plan reasoning effort for that session:
+
+```powershell
+codex-deepseek --xhigh
+codex-deepseek --low exec "summarize the failing test"
+```
+
+Supported switches: `--none`, `--minimal`, `--low`, `--medium`, `--high`,
+`--xhigh`, `--max`. Without a switch the install defaults apply (`max` for both
+in the DeepSeek default profile). The switch is matched case-insensitively, is
+consumed by the launcher and never forwarded to `codex`; every remaining
+argument is passed through unchanged.
 
 ## Provider customization
 
