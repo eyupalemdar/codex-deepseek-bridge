@@ -70,7 +70,7 @@ function Install-Launcher {
     $compactLimit=[Math]::Floor($ContextWindow * 0.9)
     $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="{3}" -c plan_mode_reasoning_effort="{4}"' -f $DefaultModel,$ContextWindow,$compactLimit,$ReasoningEffort,$PlanReasoningEffort)
     $providerArgs=('-c model_provider="{0}" -c model_providers.{0}.name="{0}" -c model_providers.{0}.base_url="{1}" -c model_providers.{0}.env_key="{2}" -c model_providers.{0}.wire_api="responses"' -f $ProviderName,$BaseUrl,$ApiKeyEnvironmentVariable)
-    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
+    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`ncodex $modelArgs $providerArgs %*`r`n"
     Write-Utf8 $launcher $body
     if(-not$SkipPathUpdate){$userPath=[Environment]::GetEnvironmentVariable('Path','User');$entries=@($userPath-split';'|Where-Object{$_});if(-not($entries|Where-Object{$_.TrimEnd('\')-ieq$InstallBin.TrimEnd('\')})){[Environment]::SetEnvironmentVariable('Path',(@($entries)+$InstallBin)-join';','User')}}
     $launcher

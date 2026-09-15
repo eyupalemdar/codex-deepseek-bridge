@@ -12,7 +12,8 @@ try {
     & (Join-Path $root 'setup.ps1') -Action Install -ProviderCodexHome $providerHome -GptCodexHome $gptHome -InstallBin $bin -BrokerRoot $broker -CommandName test-codex-provider -SkipPathUpdate | Out-Null
     foreach($path in @((Join-Path $providerHome 'config.toml'),(Join-Path $providerHome 'models_cache.json'),(Join-Path $bin 'test-codex-provider.cmd'))){if(-not(Test-Path $path -PathType Leaf)){throw "Install output missing: $path"}}
     $launcherText=Get-Content -Raw (Join-Path $bin 'test-codex-provider.cmd')
-    if($launcherText -notmatch 'call codex'){throw 'Launcher does not preserve batch environment with CALL.'}
+    if($launcherText -match '(?m)^call codex'){throw 'Launcher must transfer control without CALL so automatic review retains the normal Codex reviewer context.'}
+    if($launcherText -notmatch '(?m)^codex '){throw 'Launcher does not invoke Codex.'}
     if($launcherText -match 'approve-for-me|ask-for-approval'){throw 'Launcher must leave approval behavior to the active Codex permissions profile.'}
     if($launcherText -notmatch 'model_context_window=1000000' -or $launcherText -notmatch 'model_auto_compact_token_limit=900000'){throw 'Launcher context overrides are missing.'}
     $configText=Get-Content -Raw (Join-Path $providerHome 'config.toml')
@@ -28,7 +29,7 @@ try {
     $validation=& (Join-Path $broker 'codex-image.ps1') -RequestPath $requestPath -ValidateOnly|ConvertFrom-Json
     if($validation.status-ne'validated'-or$validation.project_id-ne'sample-project'){throw 'Broker validation failed.'}
 
-    [ordered]@{status='passed';install=$true;catalog=$true;launcher_call_fix=$true;permissions_preserved=$true;context_pinned=$true;project_registration=$true;broker_validation=$true}|ConvertTo-Json
+    [ordered]@{status='passed';install=$true;catalog=$true;reviewer_context_preserved=$true;permissions_preserved=$true;context_pinned=$true;project_registration=$true;broker_validation=$true}|ConvertTo-Json
 }
 finally {
     if(Test-Path -LiteralPath $testRoot){Remove-Item -LiteralPath $testRoot -Recurse -Force}

@@ -116,6 +116,12 @@ made in Codex remains authoritative. Forcing automatic review with a custom
 provider can route Codex's internal reviewer model name to that provider and
 cause otherwise safe commands to be rejected.
 
+On Windows the generated launcher intentionally invokes the Codex batch entry
+point without `CALL`. Explicit CLI overrides keep the main request on the custom
+provider, while the automatic approval reviewer retains the normal ChatGPT
+Codex context required for its internal model. Changing this line to
+`call codex` can route `codex-auto-review` to the custom provider.
+
 ## Uninstall
 
 Preview the scoped removal first:
