@@ -30,6 +30,8 @@ model = "$DefaultModel"
 model_reasoning_effort = "$ReasoningEffort"
 plan_mode_reasoning_effort = "$PlanReasoningEffort"
 model_provider = "$ProviderName"
+model_context_window = $ContextWindow
+model_auto_compact_token_limit = $([Math]::Floor($ContextWindow * 0.9))
 web_search = "disabled"
 
 [model_providers.$ProviderName]
@@ -65,9 +67,10 @@ function New-Catalog {
 function Install-Launcher {
     New-Item -ItemType Directory -Path $InstallBin -Force|Out-Null
     $launcher=Join-Path $InstallBin "$CommandName.cmd"
-    $modelArgs=('-c model="{0}" -c model_reasoning_effort="{1}" -c plan_mode_reasoning_effort="{2}"' -f $DefaultModel,$ReasoningEffort,$PlanReasoningEffort)
+    $compactLimit=[Math]::Floor($ContextWindow * 0.9)
+    $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="{3}" -c plan_mode_reasoning_effort="{4}"' -f $DefaultModel,$ContextWindow,$compactLimit,$ReasoningEffort,$PlanReasoningEffort)
     $providerArgs=('-c model_provider="{0}" -c model_providers.{0}.name="{0}" -c model_providers.{0}.base_url="{1}" -c model_providers.{0}.env_key="{2}" -c model_providers.{0}.wire_api="responses"' -f $ProviderName,$BaseUrl,$ApiKeyEnvironmentVariable)
-    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`ncall codex --approve-for-me $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
+    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
     Write-Utf8 $launcher $body
     if(-not$SkipPathUpdate){$userPath=[Environment]::GetEnvironmentVariable('Path','User');$entries=@($userPath-split';'|Where-Object{$_});if(-not($entries|Where-Object{$_.TrimEnd('\')-ieq$InstallBin.TrimEnd('\')})){[Environment]::SetEnvironmentVariable('Path',(@($entries)+$InstallBin)-join';','User')}}
     $launcher

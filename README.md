@@ -15,6 +15,7 @@ generated assets.
 - An isolated provider home, default: `%USERPROFILE%\.codex-deepseek`
 - A global command, default: `codex-deepseek`
 - Explicit provider/model CLI overrides to prevent profile fallback
+- Explicit context and compaction limits for custom-provider models
 - A local model catalog so `/model` recognizes configured provider models
 - Independent Default and Plan reasoning levels
 - Optional protected image broker and per-project delivery policy
@@ -72,6 +73,11 @@ The DeepSeek V4.1 Flash/V4 Pro default is 1M, matching the provider's published
 limit; lower it explicitly for other providers or models. See DeepSeek's
 [current model table](https://api-docs.deepseek.com/quick_start/pricing).
 
+Codex 0.154.0 may still print a fallback-metadata warning for a custom-provider
+model slug even when the local catalog exists. The generated config and launcher
+pin the context and automatic-compaction limits so fallback sizing does not
+silently shrink the working window.
+
 ## Optional image bridge
 
 Register a project and install the protected broker:
@@ -104,6 +110,11 @@ Inside either provider-backed or normal Codex sessions, `/mode`, `/plan`,
 `Shift+Tab`, and `/permissions` remain Codex-local controls. Provider/model and
 reasoning defaults are isolated by the launcher. `/model` may still include the
 bundled OpenAI catalog; use only models registered for your active provider.
+The launcher deliberately does not pass `--approve-for-me`,
+`--ask-for-approval`, or an approval-policy override. The permissions selection
+made in Codex remains authoritative. Forcing automatic review with a custom
+provider can route Codex's internal reviewer model name to that provider and
+cause otherwise safe commands to be rejected.
 
 ## Uninstall
 
