@@ -60,13 +60,17 @@ All defaults can be overridden:
   -Models deepseek-flash,deepseek-v4-pro `
   -DefaultModel deepseek-flash `
   -ReasoningEffort max `
-  -PlanReasoningEffort max
+  -PlanReasoningEffort max `
+  -ContextWindow 1000000
 ```
 
 The `responses` wire API is required. A provider can expose standard OpenAI-like
 model listing while still failing Codex's richer model-catalog schema; the local
 catalog handles that mismatch. Its capability declaration is deliberately
 conservative: text-only, no native search, and a configurable context window.
+The DeepSeek V4.1 Flash/V4 Pro default is 1M, matching the provider's published
+limit; lower it explicitly for other providers or models. See DeepSeek's
+[current model table](https://api-docs.deepseek.com/quick_start/pricing).
 
 ## Optional image bridge
 
