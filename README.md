@@ -17,7 +17,7 @@ generated assets.
 - Explicit provider/model CLI overrides to prevent profile fallback
 - Explicit context and compaction limits for custom-provider models
 - A local model catalog so `/model` recognizes configured provider models
-- Automatic five-minute catalog TTL refresh at launcher startup
+- A session-lifetime cache keeper that renews the five-minute catalog TTL
 - Independent Default and Plan reasoning levels
 - Optional protected image broker and per-project delivery policy
 - Validation, live smoke-test, and scoped uninstall actions
@@ -74,10 +74,24 @@ The DeepSeek V4.1 Flash/V4 Pro default is 1M, matching the provider's published
 limit; lower it explicitly for other providers or models. See DeepSeek's
 [current model table](https://api-docs.deepseek.com/quick_start/pricing).
 
-Codex 0.154.0 accepts a cached custom-model catalog for five minutes. The
-launcher refreshes the cache timestamp before every start, preserving the
-configured metadata and context window. Codex exposes 95% of the declared model
-window as usable context, so the 1M DeepSeek default reports 950,000 tokens.
+By default the generated provider config does not override Codex approval
+behavior: the permissions and reviewer selection made inside Codex remain
+authoritative. Pass `-ApprovalsReviewer auto_review` if the provider profile
+should default to Approve for me (or `-ApprovalsReviewer user` to pin manual
+review). The in-session `/permissions` selection still wins for the running
+session.
+
+Codex 0.154.0 accepts a cached custom-model catalog for five minutes and loads
+it with `refresh_strategy=offline` when it spawns guardian/auto-review sessions.
+A stale entry drops the reviewer override and fails closed to a manual approval
+prompt, so the launcher starts a hidden keeper that renews the cache timestamp
+every four minutes for the life of the session; the keeper exits when the
+launcher exits and only rewrites `fetched_at` (atomic temp-file replace), never
+the model metadata. The launcher stops with a clear error if the catalog file
+is missing. Re-run `setup.ps1 -Action Install` after a Codex CLI update to
+regenerate the catalog for the new client version. Codex exposes 95% of the
+declared model window as usable context, so the 1M DeepSeek default reports
+950,000 tokens.
 
 ## Optional image bridge
 
@@ -112,13 +126,13 @@ Inside either provider-backed or normal Codex sessions, `/mode`, `/plan`,
 reasoning defaults are isolated by the launcher. `/model` may still include the
 bundled OpenAI catalog; use only models registered for your active provider.
 The launcher does not pass `--approve-for-me`, `--ask-for-approval`, or an
-approval-policy override. The permissions selection made in Codex remains
-authoritative. Each model's generated metadata sets
-`auto_review_model_override` to the configured default provider model. When the
-user selects Approve for me, Codex therefore uses a model that the custom
-provider can serve instead of sending the internal `codex-auto-review` slug.
-On Windows the launcher uses `CALL` so the isolated provider home and its fresh
-catalog remain active for the complete Codex process.
+approval-policy override; only the optional `-ApprovalsReviewer` install
+parameter writes a config-level reviewer default. Each model's generated
+metadata sets `auto_review_model_override` to the configured default provider
+model. When Approve for me is active, Codex therefore uses a model that the
+custom provider can serve instead of sending the internal `codex-auto-review`
+slug. On Windows the launcher uses `CALL` so the isolated provider home and its
+fresh catalog remain active for the complete Codex process.
 
 ## Uninstall
 
@@ -146,4 +160,5 @@ compatibility with future Codex CLI or third-party API changes.
 ```
 
 Functional tests install only into a unique temporary directory, validate the
-local model catalog and broker request boundary, and remove that directory.
+local model catalog, the cache keeper, and the broker request boundary, and
+remove that directory.

@@ -12,6 +12,8 @@ param(
     [ValidateSet('none','minimal','low','medium','high','xhigh','max')]
     [string]$PlanReasoningEffort = 'max',
     [ValidateRange(16000,1000000)][int]$ContextWindow = 1000000,
+    [ValidateSet('','user','auto_review')]
+    [string]$ApprovalsReviewer = '',
     [string]$ProviderCodexHome = (Join-Path $env:USERPROFILE '.codex-deepseek'),
     [string]$GptCodexHome = (Join-Path $env:USERPROFILE '.codex'),
     [string]$InstallBin = (Join-Path $env:USERPROFILE '.local\bin'),
@@ -39,6 +41,7 @@ $forward = @{
     ReasoningEffort = $ReasoningEffort
     PlanReasoningEffort = $PlanReasoningEffort
     ContextWindow = $ContextWindow
+    ApprovalsReviewer = $ApprovalsReviewer
     ProviderCodexHome = $ProviderCodexHome
     GptCodexHome = $GptCodexHome
     InstallBin = $InstallBin

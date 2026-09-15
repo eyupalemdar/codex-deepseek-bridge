@@ -3,6 +3,7 @@ param(
     [string]$Action,[string]$ProviderName,[string]$BaseUrl,
     [string]$ApiKeyEnvironmentVariable,[string[]]$Models,[string]$DefaultModel,
     [string]$ReasoningEffort,[string]$PlanReasoningEffort,[int]$ContextWindow,
+    [ValidateSet('','user','auto_review')][string]$ApprovalsReviewer,
     [string]$ProviderCodexHome,[string]$GptCodexHome,[string]$InstallBin,
     [string]$BrokerRoot,[string]$CommandName,[string]$ProjectRoot,
     [string]$ProjectId,[string]$DeliveryPolicy,[switch]$LiveTest,[switch]$SkipPathUpdate
@@ -25,25 +26,29 @@ function Require-Codex {
     if(-not(Get-Command codex -ErrorAction SilentlyContinue)){throw 'Install OpenAI Codex CLI and place codex on PATH first.'}
 }
 function Get-ConfigText {
-@"
-model = "$DefaultModel"
-model_reasoning_effort = "$ReasoningEffort"
-plan_mode_reasoning_effort = "$PlanReasoningEffort"
-model_provider = "$ProviderName"
-model_context_window = $ContextWindow
-model_auto_compact_token_limit = $([Math]::Floor($ContextWindow * 0.9))
-web_search = "disabled"
-
-[model_providers.$ProviderName]
-name = "$ProviderName"
-base_url = "$BaseUrl"
-env_key = "$ApiKeyEnvironmentVariable"
-env_key_instructions = "Set $ApiKeyEnvironmentVariable in the user environment. Never put the value in this file."
-wire_api = "responses"
-request_max_retries = 3
-stream_max_retries = 3
-stream_idle_timeout_ms = 300000
-"@
+    $lines=@(
+        "model = `"$DefaultModel`""
+        "model_reasoning_effort = `"$ReasoningEffort`""
+        "plan_mode_reasoning_effort = `"$PlanReasoningEffort`""
+        "model_provider = `"$ProviderName`""
+        "model_context_window = $ContextWindow"
+        "model_auto_compact_token_limit = $([Math]::Floor($ContextWindow * 0.9))"
+    )
+    if(-not[string]::IsNullOrWhiteSpace($ApprovalsReviewer)){$lines+="approvals_reviewer = `"$ApprovalsReviewer`""}
+    $lines+=@(
+        'web_search = "disabled"'
+        ''
+        "[model_providers.$ProviderName]"
+        "name = `"$ProviderName`""
+        "base_url = `"$BaseUrl`""
+        "env_key = `"$ApiKeyEnvironmentVariable`""
+        "env_key_instructions = `"Set $ApiKeyEnvironmentVariable in the user environment. Never put the value in this file.`""
+        'wire_api = "responses"'
+        'request_max_retries = 3'
+        'stream_max_retries = 3'
+        'stream_idle_timeout_ms = 300000'
+    )
+    ($lines -join "`r`n") + "`r`n"
 }
 function New-Catalog {
     Require-Codex
@@ -68,20 +73,43 @@ function New-Catalog {
 function Install-Launcher {
     New-Item -ItemType Directory -Path $InstallBin -Force|Out-Null
     $launcher=Join-Path $InstallBin "$CommandName.cmd"
-    $refreshHelper=Join-Path $InstallBin "$CommandName-refresh-model-catalog.ps1"
-    $refreshBody=@'
+    $keeper=Join-Path $InstallBin "$CommandName-cache-keeper.ps1"
+    $keeperBody=@'
 [CmdletBinding()]
-param([Parameter(Mandatory)][string]$CachePath)
+param(
+    [Parameter(Mandatory)][string]$CachePath,
+    [int]$IntervalSeconds=240,
+    [int]$MaxHours=12,
+    [int]$ParentPid=0,
+    [int]$MaxIterations=0
+)
 $ErrorActionPreference='Stop'
-$cache=Get-Content -LiteralPath $CachePath -Raw|ConvertFrom-Json
-$cache.fetched_at=[DateTime]::UtcNow.ToString('o')
-[IO.File]::WriteAllText($CachePath,($cache|ConvertTo-Json -Depth 20),(New-Object Text.UTF8Encoding($false)))
+if($ParentPid-le0){try{$ParentPid=[int](Get-CimInstance Win32_Process -Filter "ProcessId = $PID" -ErrorAction Stop).ParentProcessId}catch{$ParentPid=0}}
+$utf8=New-Object Text.UTF8Encoding($false);$deadline=(Get-Date).AddHours($MaxHours);$touches=0
+function Update-Cache {
+    if(-not(Test-Path -LiteralPath $CachePath -PathType Leaf)){return $false}
+    try{
+        $cache=Get-Content -LiteralPath $CachePath -Raw|ConvertFrom-Json
+        $cache.fetched_at=[DateTime]::UtcNow.ToString('o')
+        $temp="$CachePath.keeper.tmp"
+        [IO.File]::WriteAllText($temp,($cache|ConvertTo-Json -Depth 20),$utf8)
+        try{[IO.File]::Replace($temp,$CachePath,$null)}catch{[IO.File]::Copy($temp,$CachePath,$true);Remove-Item -LiteralPath $temp -Force}
+        return $true
+    }catch{return $false}
+}
+while((Get-Date)-lt$deadline){
+    if($MaxIterations-gt0-and$touches-ge$MaxIterations){break}
+    if($ParentPid-gt0-and-not(Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)){break}
+    if(-not(Update-Cache)){break}
+    $touches++
+    Start-Sleep -Seconds $IntervalSeconds
+}
 '@
-    Write-Utf8 $refreshHelper $refreshBody
+    Write-Utf8 $keeper $keeperBody
     $compactLimit=[Math]::Floor($ContextWindow * 0.9)
     $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="{3}" -c plan_mode_reasoning_effort="{4}"' -f $DefaultModel,$ContextWindow,$compactLimit,$ReasoningEffort,$PlanReasoningEffort)
     $providerArgs=('-c model_provider="{0}" -c model_providers.{0}.name="{0}" -c model_providers.{0}.base_url="{1}" -c model_providers.{0}.env_key="{2}" -c model_providers.{0}.wire_api="responses"' -f $ProviderName,$BaseUrl,$ApiKeyEnvironmentVariable)
-    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$refreshHelper`" -CachePath `"$ProviderCodexHome\models_cache.json`" >nul`r`nif errorlevel 1 (`r`n  echo Failed to refresh the provider model catalog. 1>&2`r`n  exit /b 3`r`n)`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
+    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`nif not exist `"$ProviderCodexHome\models_cache.json`" (`r`n  echo Provider model catalog is missing; run setup.ps1 -Action Install first. 1>&2`r`n  exit /b 3`r`n)`r`nstart `"$CommandName-cache-keeper`" /b powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$keeper`" -CachePath `"$ProviderCodexHome\models_cache.json`" >nul 2>nul`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
     Write-Utf8 $launcher $body
     if(-not$SkipPathUpdate){$userPath=[Environment]::GetEnvironmentVariable('Path','User');$entries=@($userPath-split';'|Where-Object{$_});if(-not($entries|Where-Object{$_.TrimEnd('\')-ieq$InstallBin.TrimEnd('\')})){[Environment]::SetEnvironmentVariable('Path',(@($entries)+$InstallBin)-join';','User')}}
     $launcher
@@ -89,11 +117,12 @@ $cache.fetched_at=[DateTime]::UtcNow.ToString('o')
 function Install-All {
     Require-Codex;Assert-Token $ProviderName 'provider';Assert-EnvName $ApiKeyEnvironmentVariable
     if($Models -notcontains $DefaultModel){throw 'DefaultModel must be included in Models.'}
+    if(-not[string]::IsNullOrWhiteSpace($ApprovalsReviewer)){Assert-Token $ApprovalsReviewer 'approvals reviewer'}
     New-Item -ItemType Directory -Path $ProviderCodexHome -Force|Out-Null
     Write-Utf8 (Join-Path $ProviderCodexHome 'config.toml') (Get-ConfigText)
     Write-Utf8 (Join-Path $ProviderCodexHome 'models_cache.json') ((New-Catalog)|ConvertTo-Json -Depth 20)
     $launcher=Install-Launcher
-    [ordered]@{status='installed';launcher=$launcher;provider_home=$ProviderCodexHome;models=$Models;secret_written=$false;new_terminal_required=$true}|ConvertTo-Json -Depth 4
+    [ordered]@{status='installed';launcher=$launcher;cache_keeper=(Join-Path $InstallBin "$CommandName-cache-keeper.ps1");provider_home=$ProviderCodexHome;models=$Models;approvals_reviewer=$ApprovalsReviewer;secret_written=$false;new_terminal_required=$true}|ConvertTo-Json -Depth 4
 }
 function Set-Key {
     Assert-EnvName $ApiKeyEnvironmentVariable
@@ -125,12 +154,12 @@ function Register-Project {
 }
 function Test-All {
     $present=-not[string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($ApiKeyEnvironmentVariable,'User'))
-    $result=[ordered]@{codex_present=[bool](Get-Command codex -ErrorAction SilentlyContinue);provider_home=(Test-Path $ProviderCodexHome);launcher=(Test-Path(Join-Path $InstallBin "$CommandName.cmd"));key_present=$present;key_value_printed=$false;live_test='not-requested'}
+    $result=[ordered]@{codex_present=[bool](Get-Command codex -ErrorAction SilentlyContinue);provider_home=(Test-Path $ProviderCodexHome);launcher=(Test-Path(Join-Path $InstallBin "$CommandName.cmd"));cache_keeper=(Test-Path(Join-Path $InstallBin "$CommandName-cache-keeper.ps1"));key_present=$present;key_value_printed=$false;live_test='not-requested'}
     if($LiveTest){if(-not$present){throw 'Provider key is missing.'};$launcher=Join-Path $InstallBin "$CommandName.cmd";$output=& $launcher exec --ephemeral --skip-git-repo-check 'Reply with exactly PROVIDER_SMOKE_OK' 2>&1;$result.live_test=if($LASTEXITCODE-eq0){'passed'}else{'failed'};if($LASTEXITCODE-ne0){throw ($output|Out-String)}}
     $result|ConvertTo-Json
 }
 function Uninstall-All {
-    $targets=@((Join-Path $InstallBin "$CommandName.cmd"),(Join-Path $InstallBin "$CommandName-refresh-model-catalog.ps1"),$ProviderCodexHome)
+    $targets=@((Join-Path $InstallBin "$CommandName.cmd"),(Join-Path $InstallBin "$CommandName-cache-keeper.ps1"),(Join-Path $InstallBin "$CommandName-refresh-model-catalog.ps1"),$ProviderCodexHome)
     foreach($target in $targets){if(Test-Path $target){if($PSCmdlet.ShouldProcess($target,'Remove tool-owned path')){Remove-Item -LiteralPath $target -Recurse -Force}}}
     [ordered]@{status='uninstalled';normal_codex_home_preserved=$GptCodexHome;projects_preserved=$true;broker_preserved=$true}|ConvertTo-Json
 }
