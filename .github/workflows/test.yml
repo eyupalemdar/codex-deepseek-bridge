@@ -1,0 +1,23 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Codex CLI
+        run: npm install --global @openai/codex
+      - name: Static checks
+        shell: powershell
+        run: .\tests\Static.Tests.ps1
+      - name: Functional checks
+        shell: powershell
+        run: .\tests\Functional.Tests.ps1
+

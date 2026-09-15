@@ -1,0 +1,8 @@
+*.log
+*.tmp
+.idea/
+.vscode/
+artifacts/
+secrets/
+request.local.json
+

@@ -1,0 +1,10 @@
+{
+  "project_id": "my-app",
+  "task_id": "background-concept-v1",
+  "operation": "generate",
+  "prompt": "Create an original restrained game background, no text, no logos, no watermark, and no recognizable third-party trade dress.",
+  "reference_images": [],
+  "output_directory": "Saved/AI_Temp/DelegatedImages/background-concept-v1",
+  "max_images": 1
+}
+
