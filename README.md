@@ -17,6 +17,7 @@ generated assets.
 - Explicit provider/model CLI overrides to prevent profile fallback
 - Explicit context and compaction limits for custom-provider models
 - A local model catalog so `/model` recognizes configured provider models
+- Automatic five-minute catalog TTL refresh at launcher startup
 - Independent Default and Plan reasoning levels
 - Optional protected image broker and per-project delivery policy
 - Validation, live smoke-test, and scoped uninstall actions
@@ -73,10 +74,10 @@ The DeepSeek V4.1 Flash/V4 Pro default is 1M, matching the provider's published
 limit; lower it explicitly for other providers or models. See DeepSeek's
 [current model table](https://api-docs.deepseek.com/quick_start/pricing).
 
-Codex 0.154.0 may still print a fallback-metadata warning for a custom-provider
-model slug even when the local catalog exists. The generated config and launcher
-pin the context and automatic-compaction limits so fallback sizing does not
-silently shrink the working window.
+Codex 0.154.0 accepts a cached custom-model catalog for five minutes. The
+launcher refreshes the cache timestamp before every start, preserving the
+configured metadata and context window. Codex exposes 95% of the declared model
+window as usable context, so the 1M DeepSeek default reports 950,000 tokens.
 
 ## Optional image bridge
 
@@ -110,17 +111,14 @@ Inside either provider-backed or normal Codex sessions, `/mode`, `/plan`,
 `Shift+Tab`, and `/permissions` remain Codex-local controls. Provider/model and
 reasoning defaults are isolated by the launcher. `/model` may still include the
 bundled OpenAI catalog; use only models registered for your active provider.
-The launcher deliberately does not pass `--approve-for-me`,
-`--ask-for-approval`, or an approval-policy override. The permissions selection
-made in Codex remains authoritative. Forcing automatic review with a custom
-provider can route Codex's internal reviewer model name to that provider and
-cause otherwise safe commands to be rejected.
-
-On Windows the generated launcher intentionally invokes the Codex batch entry
-point without `CALL`. Explicit CLI overrides keep the main request on the custom
-provider, while the automatic approval reviewer retains the normal ChatGPT
-Codex context required for its internal model. Changing this line to
-`call codex` can route `codex-auto-review` to the custom provider.
+The launcher does not pass `--approve-for-me`, `--ask-for-approval`, or an
+approval-policy override. The permissions selection made in Codex remains
+authoritative. Each model's generated metadata sets
+`auto_review_model_override` to the configured default provider model. When the
+user selects Approve for me, Codex therefore uses a model that the custom
+provider can serve instead of sending the internal `codex-auto-review` slug.
+On Windows the launcher uses `CALL` so the isolated provider home and its fresh
+catalog remain active for the complete Codex process.
 
 ## Uninstall
 

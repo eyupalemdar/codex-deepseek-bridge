@@ -60,6 +60,7 @@ function New-Catalog {
         $m.default_reasoning_level=$ReasoningEffort;$m.supported_reasoning_levels=$levels
         $m.visibility='list';$m.priority=$priority;$m.additional_speed_tiers=@();$m.service_tiers=@();$m.availability_nux=$null;$m.upgrade=$null
         $m.model_messages=$null;$m.base_instructions=$instructions;$m.supports_image_detail_original=$false;$m.supports_search_tool=$false
+        $m|Add-Member -NotePropertyName auto_review_model_override -NotePropertyValue $DefaultModel -Force
         $m.input_modalities=@('text');$m.context_window=$ContextWindow;$m.max_context_window=$ContextWindow;$items+=$m
     }
     [ordered]@{fetched_at=[DateTime]::UtcNow.ToString('o');etag="local-$ProviderName-catalog-v1";client_version=(& codex --version).Split(' ')[1];models=$items}
@@ -67,10 +68,20 @@ function New-Catalog {
 function Install-Launcher {
     New-Item -ItemType Directory -Path $InstallBin -Force|Out-Null
     $launcher=Join-Path $InstallBin "$CommandName.cmd"
+    $refreshHelper=Join-Path $InstallBin "$CommandName-refresh-model-catalog.ps1"
+    $refreshBody=@'
+[CmdletBinding()]
+param([Parameter(Mandatory)][string]$CachePath)
+$ErrorActionPreference='Stop'
+$cache=Get-Content -LiteralPath $CachePath -Raw|ConvertFrom-Json
+$cache.fetched_at=[DateTime]::UtcNow.ToString('o')
+[IO.File]::WriteAllText($CachePath,($cache|ConvertTo-Json -Depth 20),(New-Object Text.UTF8Encoding($false)))
+'@
+    Write-Utf8 $refreshHelper $refreshBody
     $compactLimit=[Math]::Floor($ContextWindow * 0.9)
     $modelArgs=('-c model="{0}" -c model_context_window={1} -c model_auto_compact_token_limit={2} -c model_reasoning_effort="{3}" -c plan_mode_reasoning_effort="{4}"' -f $DefaultModel,$ContextWindow,$compactLimit,$ReasoningEffort,$PlanReasoningEffort)
     $providerArgs=('-c model_provider="{0}" -c model_providers.{0}.name="{0}" -c model_providers.{0}.base_url="{1}" -c model_providers.{0}.env_key="{2}" -c model_providers.{0}.wire_api="responses"' -f $ProviderName,$BaseUrl,$ApiKeyEnvironmentVariable)
-    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`ncodex $modelArgs $providerArgs %*`r`n"
+    $body="@echo off`r`nsetlocal`r`nset `"CODEX_HOME=$ProviderCodexHome`"`r`nif not defined $ApiKeyEnvironmentVariable (`r`n  echo $ApiKeyEnvironmentVariable is not configured. 1>&2`r`n  exit /b 2`r`n)`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$refreshHelper`" -CachePath `"$ProviderCodexHome\models_cache.json`" >nul`r`nif errorlevel 1 (`r`n  echo Failed to refresh the provider model catalog. 1>&2`r`n  exit /b 3`r`n)`r`ncall codex $modelArgs $providerArgs %*`r`nexit /b %ERRORLEVEL%`r`n"
     Write-Utf8 $launcher $body
     if(-not$SkipPathUpdate){$userPath=[Environment]::GetEnvironmentVariable('Path','User');$entries=@($userPath-split';'|Where-Object{$_});if(-not($entries|Where-Object{$_.TrimEnd('\')-ieq$InstallBin.TrimEnd('\')})){[Environment]::SetEnvironmentVariable('Path',(@($entries)+$InstallBin)-join';','User')}}
     $launcher
@@ -119,7 +130,7 @@ function Test-All {
     $result|ConvertTo-Json
 }
 function Uninstall-All {
-    $targets=@((Join-Path $InstallBin "$CommandName.cmd"),$ProviderCodexHome)
+    $targets=@((Join-Path $InstallBin "$CommandName.cmd"),(Join-Path $InstallBin "$CommandName-refresh-model-catalog.ps1"),$ProviderCodexHome)
     foreach($target in $targets){if(Test-Path $target){if($PSCmdlet.ShouldProcess($target,'Remove tool-owned path')){Remove-Item -LiteralPath $target -Recurse -Force}}}
     [ordered]@{status='uninstalled';normal_codex_home_preserved=$GptCodexHome;projects_preserved=$true;broker_preserved=$true}|ConvertTo-Json
 }
