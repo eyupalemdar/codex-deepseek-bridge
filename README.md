@@ -6,7 +6,9 @@ bridge that lets the provider-driven Codex session request built-in image
 generation through your existing ChatGPT Codex login without exposing OAuth
 credentials or requiring `OPENAI_API_KEY`.
 
-Windows 10/11 and PowerShell 5.1+ are supported. The scripts are parameterized;
+Windows 10/11 with PowerShell 5.1+ and macOS with Python 3.9+ are supported.
+The macOS entry point uses only Python's standard library; PowerShell is not
+required on Mac. The scripts are parameterized;
 the repository contains no machine-specific paths, API keys, account data, or
 generated assets.
 
@@ -23,9 +25,79 @@ generated assets.
 - Optional protected image broker and per-project delivery policy
 - Validation, live smoke-test, and scoped uninstall actions
 
-Your existing `%USERPROFILE%\.codex` login and configuration are not replaced.
+Your existing `%USERPROFILE%\.codex` (Windows) or `~/.codex` (macOS) login and
+configuration are not replaced by the default installation.
 
-## Quick start
+## Quick start: macOS
+
+Install Codex CLI and Python 3.9+ first (`codex --version` and `python3 --version`
+should work in your terminal). Sign in using `codex login` if you want the
+optional image bridge. From this repository:
+
+```sh
+./setup.sh install
+./setup.sh set-key
+```
+
+Open a new terminal and run:
+
+```sh
+codex-deepseek
+codex-deepseek --low exec "summarize the failing test"
+```
+
+The installer creates `~/.codex-deepseek` and `~/.local/bin/codex-deepseek`,
+and adds a marked PATH block to `${ZDOTDIR:-$HOME}/.zprofile` for macOS's default
+zsh login shell. Reinstalling updates that block without duplicating it. Use
+`--skip-path-update` to manage PATH yourself, including when using another
+shell; the command can always be invoked as `~/.local/bin/codex-deepseek`.
+
+`set-key` prompts without echoing the key and stores it in
+`~/.codex-deepseek/.bridge/provider-key` with owner-only permissions (`600`).
+This is a local plaintext file, not Keychain storage. The launcher also accepts
+an already exported `DEEPSEEK_API_KEY`, which takes precedence over the file.
+The key is injected only into the child Codex environment, not shell profiles,
+command arguments, or `config.toml`.
+
+```sh
+./setup.sh test
+./setup.sh test --live-test
+```
+
+The first command checks the installation and key presence without contacting
+the provider. The live test makes a small billed provider request and verifies
+the expected response. A missing dependency, key, or file returns a nonzero
+status.
+
+Provider customization uses equivalent kebab-case options:
+
+```sh
+./setup.sh install \
+  --provider-name deepseek \
+  --base-url https://api.deepseek.com \
+  --api-key-environment-variable DEEPSEEK_API_KEY \
+  --models deepseek-flash,deepseek-v4-pro \
+  --default-model deepseek-flash \
+  --reasoning-effort max \
+  --plan-reasoning-effort max \
+  --context-window 1000000
+```
+
+Run `./setup.sh --help` for all options. Provider names cannot contain dots,
+because Codex CLI overrides use dots to separate config keys.
+Subsequent actions read the saved installation settings; for a custom home,
+pass the same `--provider-codex-home`
+to `set-key`, `test`, `register-project`, and `uninstall`. Re-run `install` with
+your original options after updating Codex or relocating the Python interpreter.
+The installed runtime is copied into the provider home, so running the commands
+does not depend on keeping this checkout at its original location.
+
+On macOS the catalog is refreshed before Codex starts and then every four
+minutes by a thread in the launcher. It stops when Codex exits and has no
+12-hour limit. Arguments after an optional first reasoning switch are passed
+as an argument array, preserving spaces, quotes, empty arguments, and prompt text.
+
+## Quick start: Windows
 
 Install Codex CLI and sign in with ChatGPT first if you want the optional image
 bridge. Then clone this repository and run:
@@ -114,6 +186,23 @@ declared model window as usable context, so the 1M DeepSeek default reports
 
 Register a project and install the protected broker:
 
+macOS:
+
+```sh
+./setup.sh register-project \
+  --project-root "$HOME/src/my-app" \
+  --project-id my-app \
+  --delivery-policy staging
+codex-image --request-path "$HOME/src/my-app/image-request.json" --validate-only
+```
+
+Omit `--validate-only` to generate images. The registered exec-policy rule uses
+the absolute `~/.local/bin/codex-image` path followed by `--request-path`; use
+that exact command path when requesting execution through Codex. The normal
+ChatGPT Codex home must already be configured for built-in image generation.
+
+Windows:
+
 ```powershell
 .\setup.ps1 -Action RegisterProject `
   -ProjectRoot C:\src\my-app `
@@ -155,6 +244,21 @@ fresh catalog remain active for the complete Codex process.
 
 Preview the scoped removal first:
 
+macOS:
+
+```sh
+./setup.sh uninstall --what-if
+./setup.sh uninstall
+```
+
+The macOS uninstaller checks installation ownership, removes the provider home
+(including its stored provider key), launcher, and its marked PATH block.
+The normal ChatGPT home, registered projects, image broker and `codex-image`
+command are preserved. Provider, ChatGPT, broker and bin directories must not
+overlap. Existing unrelated provider homes or commands are not overwritten.
+
+Windows:
+
 ```powershell
 .\setup.ps1 -Action Uninstall -WhatIf
 .\setup.ps1 -Action Uninstall
@@ -170,6 +274,15 @@ asset approval. Review generated files and hashes. The scripts cannot guarantee
 compatibility with future Codex CLI or third-party API changes.
 
 ## Development
+
+macOS (offline tests, no real keys or billed requests):
+
+```sh
+sh -n setup.sh
+python3 -m unittest discover -s tests -p 'test_macos.py' -v
+```
+
+Windows:
 
 ```powershell
 .\tests\Static.Tests.ps1
