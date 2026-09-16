@@ -8,6 +8,27 @@ permissions:
   contents: read
 
 jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Check shell entry point
+        run: sh -n setup.sh
+      - name: Offline macOS integration tests
+        run: python3 -m unittest discover -s tests -p 'test_macos.py' -v
+      - name: Install Codex CLI
+        run: npm install --global @openai/codex
+      - name: Check installed launcher with real Codex (no provider request)
+        shell: bash
+        run: |
+          test_root=$(mktemp -d)
+          trap 'rm -rf "$test_root"' EXIT
+          ./setup.sh install --provider-codex-home "$test_root/provider" --gpt-codex-home "$test_root/chatgpt" --install-bin "$test_root/bin" --broker-root "$test_root/broker" --api-key-environment-variable BRIDGE_SMOKE_KEY --base-url http://127.0.0.1:9 --skip-path-update
+          BRIDGE_SMOKE_KEY=offline-placeholder "$test_root/bin/codex-deepseek" debug prompt-input 'Check configuration.' > "$test_root/prompt.json"
+          ./setup.sh uninstall --provider-codex-home "$test_root/provider"
   powershell:
     runs-on: windows-latest
     steps:
