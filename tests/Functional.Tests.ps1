@@ -23,6 +23,10 @@ try {
     $catalogPath=Join-Path $providerHome 'models_cache.json'
     $catalog=Get-Content -Raw $catalogPath|ConvertFrom-Json
     if(@($catalog.models|Where-Object{$_.auto_review_model_override -eq 'deepseek-flash'}).Count-ne2){throw 'Catalog reviewer override is missing.'}
+    $vision=@($catalog.models|Where-Object{$_.slug -eq 'deepseek-flash'})
+    if($vision.Count-ne1){throw 'Catalog must declare the vision model.'}
+    if($vision[0].input_modalities -notcontains 'image' -or -not$vision[0].supports_image_detail_original){throw 'The vision model must declare image input.'}
+    if(@($catalog.models|Where-Object{$_.slug -ne 'deepseek-flash' -and ($_.input_modalities -contains 'image' -or $_.supports_image_detail_original)}).Count-ne0){throw 'Only vision-capable models may declare image input.'}
     $catalog.fetched_at='2000-01-01T00:00:00.0000000Z'
     [IO.File]::WriteAllText($catalogPath,($catalog|ConvertTo-Json -Depth 20),(New-Object Text.UTF8Encoding($false)))
     & $keeper -CachePath $catalogPath -IntervalSeconds 1 -MaxIterations 1

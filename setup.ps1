@@ -6,6 +6,7 @@ param(
     [string]$BaseUrl = 'https://api.deepseek.com',
     [string]$ApiKeyEnvironmentVariable = 'DEEPSEEK_API_KEY',
     [string[]]$Models = @('deepseek-flash','deepseek-v4-pro'),
+    [string[]]$ImageInputModels = @('deepseek-flash'),
     [string]$DefaultModel = 'deepseek-flash',
     [ValidateSet('none','minimal','low','medium','high','xhigh','max')]
     [string]$ReasoningEffort = 'max',
@@ -37,6 +38,7 @@ $forward = @{
     BaseUrl = $BaseUrl
     ApiKeyEnvironmentVariable = $ApiKeyEnvironmentVariable
     Models = $Models
+    ImageInputModels = $ImageInputModels
     DefaultModel = $DefaultModel
     ReasoningEffort = $ReasoningEffort
     PlanReasoningEffort = $PlanReasoningEffort

@@ -95,6 +95,10 @@ def catalog(cfg):
     models = []
     for priority, slug in enumerate(cfg['models'], 1):
         model = copy.deepcopy(template)
+        # Only a vision-capable model may declare image input: Codex strips image
+        # parts and rejects view_image without the modality, and DeepSeek V4 Pro
+        # receives an "[Unsupported Image]" placeholder.
+        vision = slug in cfg['image_input_models']
         model.update(
             slug=slug, display_name=slug.replace('-', ' '),
             description=cfg['provider_name'] + ' model exposed through a custom Codex provider.',
@@ -105,8 +109,9 @@ def catalog(cfg):
             base_instructions='You are a coding agent operating through Codex CLI. Follow the active '
             'system, developer, project, safety, permission, and user instructions. Use available '
             'tools carefully and work within the current workspace.',
-            supports_image_detail_original=False, supports_search_tool=False,
-            auto_review_model_override=cfg['default_model'], input_modalities=['text'],
+            supports_image_detail_original=vision, supports_search_tool=False,
+            auto_review_model_override=cfg['default_model'],
+            input_modalities=['text', 'image'] if vision else ['text'],
             context_window=cfg['context_window'], max_context_window=cfg['context_window'])
         models.append(model)
     version = subprocess.check_output([executable, '--version'], text=True).split()[1]
@@ -175,6 +180,12 @@ def settings(args):
         raise ValueError('Invalid environment variable name.')
     if cfg['default_model'] not in cfg['models']:
         raise ValueError('Default model must be included in models.')
+    images = cfg['image_input_models']
+    images = images.split(',') if isinstance(images, str) else images
+    cfg['image_input_models'] = [token(m) for m in images if m]
+    for model in cfg['image_input_models']:
+        if model not in cfg['models']:
+            raise ValueError('Image input models must be included in models.')
     if not 16000 <= cfg['context_window'] <= 1000000:
         raise ValueError('Context window must be between 16000 and 1000000.')
     roots = [Path(cfg[k]) for k in ('provider_codex_home', 'gpt_codex_home', 'broker_root', 'install_bin')]
@@ -516,6 +527,7 @@ def setup(arguments):
     parser.add_argument('--api-key-environment-variable', default='DEEPSEEK_API_KEY')
     parser.add_argument('--models', default='deepseek-flash,deepseek-v4-pro')
     parser.add_argument('--default-model', default='deepseek-flash')
+    parser.add_argument('--image-input-models', default='deepseek-flash')
     parser.add_argument('--reasoning-effort', choices=LEVELS, default='max')
     parser.add_argument('--plan-reasoning-effort', choices=LEVELS, default='max')
     parser.add_argument('--context-window', type=int, default=1000000)

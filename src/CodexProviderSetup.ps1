@@ -1,7 +1,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$Action,[string]$ProviderName,[string]$BaseUrl,
-    [string]$ApiKeyEnvironmentVariable,[string[]]$Models,[string]$DefaultModel,
+    [string]$ApiKeyEnvironmentVariable,[string[]]$Models,[string]$DefaultModel,[string[]]$ImageInputModels=@('deepseek-flash'),
     [string]$ReasoningEffort,[string]$PlanReasoningEffort,[int]$ContextWindow,
     [ValidateSet('','user','auto_review')][string]$ApprovalsReviewer,
     [string]$ProviderCodexHome,[string]$GptCodexHome,[string]$InstallBin,
@@ -60,13 +60,18 @@ function New-Catalog {
     $items=@();$priority=0
     foreach($slug in $Models){
         Assert-Token $slug 'model';$priority++
+        $vision=$ImageInputModels -contains $slug
         $m=($template|ConvertTo-Json -Depth 20|ConvertFrom-Json)
         $m.slug=$slug;$m.display_name=($slug -replace '-',' ');$m.description="$ProviderName model exposed through a custom Codex provider."
         $m.default_reasoning_level=$ReasoningEffort;$m.supported_reasoning_levels=$levels
         $m.visibility='list';$m.priority=$priority;$m.additional_speed_tiers=@();$m.service_tiers=@();$m.availability_nux=$null;$m.upgrade=$null
-        $m.model_messages=$null;$m.base_instructions=$instructions;$m.supports_image_detail_original=$false;$m.supports_search_tool=$false
+        $m.model_messages=$null;$m.base_instructions=$instructions;$m.supports_image_detail_original=$vision;$m.supports_search_tool=$false
         $m|Add-Member -NotePropertyName auto_review_model_override -NotePropertyValue $DefaultModel -Force
-        $m.input_modalities=@('text');$m.context_window=$ContextWindow;$m.max_context_window=$ContextWindow;$items+=$m
+        # Only a vision-capable model may declare image input: Codex strips image
+        # parts and rejects view_image when the modality is missing, and DeepSeek
+        # V4 Pro receives an "Unsupported Image" placeholder instead.
+        $modes=@('text');if($vision){$modes+='image'}
+        $m.input_modalities=$modes;$m.context_window=$ContextWindow;$m.max_context_window=$ContextWindow;$items+=$m
     }
     [ordered]@{fetched_at=[DateTime]::UtcNow.ToString('o');etag="local-$ProviderName-catalog-v1";client_version=(& codex --version).Split(' ')[1];models=$items}
 }
@@ -147,6 +152,7 @@ while((Get-Date)-lt$deadline){
 function Install-All {
     Require-Codex;Assert-Token $ProviderName 'provider';Assert-EnvName $ApiKeyEnvironmentVariable
     if($Models -notcontains $DefaultModel){throw 'DefaultModel must be included in Models.'}
+    foreach($imageModel in $ImageInputModels){if($Models -notcontains $imageModel){throw 'ImageInputModels must be a subset of Models.'}}
     if(-not[string]::IsNullOrWhiteSpace($ApprovalsReviewer)){Assert-Token $ApprovalsReviewer 'approvals reviewer'}
     New-Item -ItemType Directory -Path $ProviderCodexHome -Force|Out-Null
     Write-Utf8 (Join-Path $ProviderCodexHome 'config.toml') (Get-ConfigText)

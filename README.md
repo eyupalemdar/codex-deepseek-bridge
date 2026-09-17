@@ -78,6 +78,7 @@ Provider customization uses equivalent kebab-case options:
   --api-key-environment-variable DEEPSEEK_API_KEY \
   --models deepseek-flash,deepseek-v4-pro \
   --default-model deepseek-flash \
+  --image-input-models deepseek-flash \
   --reasoning-effort max \
   --plan-reasoning-effort max \
   --context-window 1000000
@@ -150,6 +151,7 @@ All defaults can be overridden:
   -ApiKeyEnvironmentVariable DEEPSEEK_API_KEY `
   -Models deepseek-flash,deepseek-v4-pro `
   -DefaultModel deepseek-flash `
+  -ImageInputModels deepseek-flash `
   -ReasoningEffort max `
   -PlanReasoningEffort max `
   -ContextWindow 1000000
@@ -158,7 +160,12 @@ All defaults can be overridden:
 The `responses` wire API is required. A provider can expose standard OpenAI-like
 model listing while still failing Codex's richer model-catalog schema; the local
 catalog handles that mismatch. Its capability declaration is deliberately
-conservative: text-only, no native search, and a configurable context window.
+conservative: text plus image input for the models that accept it
+(`-ImageInputModels` / `--image-input-models`, default `deepseek-flash`; DeepSeek
+V4 Pro keeps the text-only declaration because the API hands it an
+"Unsupported Image" placeholder instead of an image), no native search, and a
+configurable context window. Image generation is out of scope here and stays
+in the protected image broker.
 The DeepSeek V4.1 Flash/V4 Pro default is 1M, matching the provider's published
 limit; lower it explicitly for other providers or models. See DeepSeek's
 [current model table](https://api-docs.deepseek.com/quick_start/pricing).
